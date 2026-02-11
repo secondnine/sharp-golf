@@ -599,16 +599,13 @@ async function loadData() {
   render();
 
   try {
-    // Load field info for tournament name
-    const [outrights, field] = await Promise.all([
-      api(`outrights?tour=${state.tour}&market=${state.market}`),
-      api(`field?tour=${state.tour}`).catch(() => null),
-    ]);
+    const outrights = await api(`outrights?tour=${state.tour}&market=${state.market}`);
 
-    if (field && field.event_name) {
+    // Extract tournament name from outrights response
+    if (outrights && outrights.event_name) {
       state.tournament = {
-        name: field.event_name,
-        course: field.course || '',
+        name: outrights.event_name,
+        course: outrights.course || '',
         tour: TOURS.find(t => t.key === state.tour)?.label || ''
       };
     }
@@ -643,9 +640,14 @@ async function loadDecompositions() {
 }
 
 function processOutrights(raw) {
-  if (!raw || !Array.isArray(raw)) return [];
+  // Handle both array and {odds:[...]} format
+  let odds = raw;
+  if (raw && raw.odds && Array.isArray(raw.odds)) {
+    odds = raw.odds;
+  }
+  if (!odds || !Array.isArray(odds)) return [];
 
-  return raw.map(p => {
+  return odds.map(p => {
     const bookOdds = {};
     let bestOdds = 0;
     let bestBook = '';
@@ -661,14 +663,29 @@ function processOutrights(raw) {
       }
     });
 
-    const dgProb = p.baseline_history_fit || p.baseline || 0;
+    // Also check pointsbet which isn't in our standard list
+    if (p.pointsbet && p.pointsbet > 1) {
+      bookOdds['pointsbet'] = p.pointsbet;
+      if (p.pointsbet > bestOdds) { bestOdds = p.pointsbet; bestBook = 'pointsbet'; }
+    }
+
+    // DG returns decimal odds in datagolf object, convert to probability
+    // e.g. datagolf.baseline_history_fit = 4.73 means 1/4.73 = 21.1% implied prob
+    const dgData = p.datagolf || {};
+    const dgDecimalOdds = dgData.baseline_history_fit || dgData.baseline || 0;
+    const dgProb = dgDecimalOdds > 0 ? 1 / dgDecimalOdds : 0;
+
+    // Best book implied probability
     const bestImplied = bestOdds > 0 ? 1 / bestOdds : 0;
+
+    // Edge = how much DG model prob exceeds best book implied prob
     const edge = bestImplied > 0 ? ((dgProb - bestImplied) / bestImplied) * 100 : 0;
 
     return {
       name: p.player_name || 'Unknown',
       dg_id: p.dg_id,
       dgProb,
+      dgOdds: dgDecimalOdds,
       books: bookOdds,
       bestBook,
       bestOdds,
@@ -679,10 +696,20 @@ function processOutrights(raw) {
 }
 
 function processMatchups(raw) {
-  if (!raw || !Array.isArray(raw)) return [];
-  return raw.map(m => {
-    const p1Prob = m.baseline_history_fit_p1 || m.baseline_p1 || 0.5;
-    const p2Prob = 1 - p1Prob;
+  // Handle both array and {matchups:[...]} format
+  let matchups = raw;
+  if (raw && raw.matchups && Array.isArray(raw.matchups)) {
+    matchups = raw.matchups;
+  }
+  if (!matchups || !Array.isArray(matchups)) return [];
+
+  return matchups.map(m => {
+    // DG matchup format: datagolf object contains model odds
+    const dgData = m.datagolf || {};
+    const dgP1Odds = dgData.p1 || dgData.baseline_p1 || 0;
+    const dgP2Odds = dgData.p2 || dgData.baseline_p2 || 0;
+    // Convert decimal odds to probability
+    const dgP1Prob = dgP1Odds > 0 ? 1 / dgP1Odds : 0.5;
 
     let bestEdge = 0;
     let bestBook = '';
@@ -690,19 +717,21 @@ function processMatchups(raw) {
     let bestP1Odds = null;
     let bestP2Odds = null;
 
-    // Check books for best value
     BOOKS.forEach(book => {
-      const o1 = m[`${book}_p1`];
-      const o2 = m[`${book}_p2`];
+      // Try different key patterns DG might use
+      const o1 = m[`${book}_p1`] || (m[book] && m[book].p1);
+      const o2 = m[`${book}_p2`] || (m[book] && m[book].p2);
+
       if (o1 && o1 > 1) {
         const impl = 1 / o1;
-        const edge = ((p1Prob - impl) / impl) * 100;
+        const edge = ((dgP1Prob - impl) / impl) * 100;
         if (edge > bestEdge) {
           bestEdge = edge; bestBook = book; bestSide = 'p1';
           bestP1Odds = o1; bestP2Odds = o2;
         }
       }
       if (o2 && o2 > 1) {
+        const p2Prob = 1 - dgP1Prob;
         const impl = 1 / o2;
         const edge = ((p2Prob - impl) / impl) * 100;
         if (edge > bestEdge) {
@@ -713,9 +742,9 @@ function processMatchups(raw) {
     });
 
     return {
-      p1: m.player_name_1 || 'Player 1',
-      p2: m.player_name_2 || 'Player 2',
-      dgP1: p1Prob,
+      p1: m.player_name_1 || m.p1_player_name || 'Player 1',
+      p2: m.player_name_2 || m.p2_player_name || 'Player 2',
+      dgP1: dgP1Prob,
       bestEdge,
       bestBook,
       bestSide,
@@ -848,7 +877,7 @@ function renderValueTab(el) {
         <div class="rank-badge">${i + 1}</div>
         <div class="player-info">
           <div class="player-name">${bet.name}</div>
-          <div class="player-model">DG Model: ${(bet.dgProb * 100).toFixed(1)}%</div>
+          <div class="player-model">DG Model: ${(bet.dgProb * 100).toFixed(1)}% (${decToAmerican(bet.dgOdds)})</div>
         </div>
         <div class="odds-col">
           <div class="odds-value">${decToAmerican(bet.bestOdds)}</div>
