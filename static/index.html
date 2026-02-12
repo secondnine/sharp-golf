@@ -696,31 +696,37 @@ function processOutrights(raw) {
 }
 
 function processMatchups(raw) {
-  // Handle both array and {matchups:[...]} format
+  // Handle {match_list:[...]} format from DG API
   let matchups = raw;
-  if (raw && raw.matchups && Array.isArray(raw.matchups)) {
+  if (raw && raw.match_list && Array.isArray(raw.match_list)) {
+    matchups = raw.match_list;
+  } else if (raw && raw.matchups && Array.isArray(raw.matchups)) {
     matchups = raw.matchups;
   }
   if (!matchups || !Array.isArray(matchups)) return [];
 
   return matchups.map(m => {
-    // DG matchup format: datagolf object contains model odds
-    const dgData = m.datagolf || {};
-    const dgP1Odds = dgData.p1 || dgData.baseline_p1 || 0;
-    const dgP2Odds = dgData.p2 || dgData.baseline_p2 || 0;
-    // Convert decimal odds to probability
-    const dgP1Prob = dgP1Odds > 0 ? 1 / dgP1Odds : 0.5;
+    const oddsObj = m.odds || {};
+    // DG model odds are nested: odds.datagolf.p1 / odds.datagolf.p2 (decimal odds)
+    const dgOdds = oddsObj.datagolf || {};
+    const dgP1Odds = dgOdds.p1 || 2.0;
+    const dgP2Odds = dgOdds.p2 || 2.0;
+    const dgP1Prob = 1 / dgP1Odds;
+    const dgP2Prob = 1 / dgP2Odds;
 
-    let bestEdge = 0;
+    let bestEdge = -999;
     let bestBook = '';
     let bestSide = 'p1';
     let bestP1Odds = null;
     let bestP2Odds = null;
 
-    BOOKS.forEach(book => {
-      // Try different key patterns DG might use
-      const o1 = m[`${book}_p1`] || (m[book] && m[book].p1);
-      const o2 = m[`${book}_p2`] || (m[book] && m[book].p2);
+    // Check each book (skip datagolf - that's the model)
+    Object.keys(oddsObj).forEach(book => {
+      if (book === 'datagolf') return;
+      const bookData = oddsObj[book];
+      if (!bookData || typeof bookData !== 'object') return;
+      const o1 = bookData.p1;
+      const o2 = bookData.p2;
 
       if (o1 && o1 > 1) {
         const impl = 1 / o1;
@@ -731,9 +737,8 @@ function processMatchups(raw) {
         }
       }
       if (o2 && o2 > 1) {
-        const p2Prob = 1 - dgP1Prob;
         const impl = 1 / o2;
-        const edge = ((p2Prob - impl) / impl) * 100;
+        const edge = ((dgP2Prob - impl) / impl) * 100;
         if (edge > bestEdge) {
           bestEdge = edge; bestBook = book; bestSide = 'p2';
           bestP1Odds = o1; bestP2Odds = o2;
@@ -742,16 +747,16 @@ function processMatchups(raw) {
     });
 
     return {
-      p1: m.player_name_1 || m.p1_player_name || 'Player 1',
-      p2: m.player_name_2 || m.p2_player_name || 'Player 2',
+      p1: m.p1_player_name || 'Player 1',
+      p2: m.p2_player_name || 'Player 2',
       dgP1: dgP1Prob,
-      bestEdge,
+      bestEdge: bestEdge > -999 ? bestEdge : 0,
       bestBook,
       bestSide,
       p1Odds: bestP1Odds,
       p2Odds: bestP2Odds,
     };
-  }).filter(m => m.bestEdge > -50).sort((a, b) => b.bestEdge - a.bestEdge);
+  }).filter(m => m.bestEdge > -50 && m.bestBook !== '').sort((a, b) => b.bestEdge - a.bestEdge);
 }
 
 function processDecompositions(raw) {
