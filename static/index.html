@@ -696,7 +696,7 @@ function processOutrights(raw) {
 }
 
 function processMatchups(raw) {
-  // Handle {match_list:[...]} format from DG API
+  // DG returns {match_list:[...]} with nested odds objects
   let matchups = raw;
   if (raw && raw.match_list && Array.isArray(raw.match_list)) {
     matchups = raw.match_list;
@@ -707,12 +707,12 @@ function processMatchups(raw) {
 
   return matchups.map(m => {
     const oddsObj = m.odds || {};
-    // DG model odds are nested: odds.datagolf.p1 / odds.datagolf.p2 (decimal odds)
+    // DG model: odds.datagolf.p1 / p2 are decimal odds
     const dgOdds = oddsObj.datagolf || {};
-    const dgP1Odds = dgOdds.p1 || 2.0;
-    const dgP2Odds = dgOdds.p2 || 2.0;
-    const dgP1Prob = 1 / dgP1Odds;
-    const dgP2Prob = 1 / dgP2Odds;
+    const dgP1DecOdds = dgOdds.p1 || 2.0;
+    const dgP2DecOdds = dgOdds.p2 || 2.0;
+    const dgP1Prob = 1 / dgP1DecOdds;
+    const dgP2Prob = 1 / dgP2DecOdds;
 
     let bestEdge = -999;
     let bestBook = '';
@@ -720,7 +720,7 @@ function processMatchups(raw) {
     let bestP1Odds = null;
     let bestP2Odds = null;
 
-    // Check each book (skip datagolf - that's the model)
+    // Each book is odds.bookname.p1 / odds.bookname.p2
     Object.keys(oddsObj).forEach(book => {
       if (book === 'datagolf') return;
       const bookData = oddsObj[book];
@@ -760,16 +760,38 @@ function processMatchups(raw) {
 }
 
 function processDecompositions(raw) {
-  if (!raw || !Array.isArray(raw)) return [];
-  return raw.map(p => ({
-    name: p.player_name,
-    overall: p.total_prediction || p.predicted_sg || 0,
-    ott: p.driving || p.off_the_tee || 0,
-    app: p.approach || 0,
-    arg: p.around_the_green || p.short_game || 0,
-    putt: p.putting || 0,
-    fit: p.course_fit || p.course_history_adj || p.total_course_history_fit || 0,
-  })).sort((a, b) => b.overall - a.overall).slice(0, 24);
+  // DG returns {players:[...]} with detailed SG breakdown
+  let players = raw;
+  if (raw && raw.players && Array.isArray(raw.players)) {
+    players = raw.players;
+  }
+  if (!players || !Array.isArray(players)) return [];
+
+  return players.map(p => {
+    // OTT = driving distance + driving accuracy adjustments
+    const ott = (p.driving_distance_adjustment || 0) + (p.driving_accuracy_adjustment || 0);
+    // APP = approach component from course fit
+    const app = p.cf_approach_comp || 0;
+    // ARG = short game component from course fit
+    const arg = p.cf_short_comp || 0;
+    // PUTT = part of strokes gained category adjustment minus approach/arg
+    // We use the SG category adjustment as a proxy for putting skill relative to field
+    const sgCat = p.strokes_gained_category_adjustment || 0;
+    const putt = sgCat - ott - app - arg; // residual is roughly putting
+
+    return {
+      name: p.player_name || 'Unknown',
+      overall: p.final_pred || p.baseline_pred || 0,
+      baseline: p.baseline_pred || 0,
+      ott: ott,
+      app: app,
+      arg: arg,
+      putt: putt,
+      fit: p.total_fit_adjustment || p.total_course_history_adjustment || 0,
+      courseHistory: p.total_course_history_adjustment || 0,
+      timing: p.timing_adjustment || 0,
+    };
+  }).sort((a, b) => b.overall - a.overall).slice(0, 30);
 }
 
 // ─── Rendering ────────────────────────────────────────────────
@@ -984,12 +1006,13 @@ function renderSkillsTab(el) {
         <div class="skill-name">${p.name}</div>
         <div class="skill-total">${p.overall > 0 ? '+' : ''}${p.overall.toFixed(2)}</div>
       </div>
-      ${sgBar(p.ott, 'OTT', 'var(--blue)', 0.9)}
-      ${sgBar(p.app, 'APP', 'var(--purple)', 0.9)}
-      ${sgBar(p.arg, 'ARG', 'var(--yellow)', 0.5)}
-      ${sgBar(p.putt, 'PUTT', 'var(--pink)', 0.5)}
+      ${sgBar(p.ott, 'OTT', 'var(--blue)', 0.15)}
+      ${sgBar(p.app, 'APP', 'var(--purple)', 0.05)}
+      ${sgBar(p.arg, 'ARG', 'var(--yellow)', 0.1)}
+      ${sgBar(p.putt, 'PUTT', 'var(--pink)', 0.3)}
       <div class="sg-divider">
-        ${sgBar(p.fit, 'FIT', 'var(--green)', 0.3)}
+        ${sgBar(p.fit, 'FIT', 'var(--green)', 0.15)}
+        ${sgBar(p.courseHistory, 'CRSE', 'var(--cyan)', 0.2)}
       </div>
     </div>
   `).join('');
