@@ -514,7 +514,7 @@ const state = {
   tour: 'pga',
   market: 'win',
   tab: 'value',
-  minEdge: 0,
+  minEdge: -Infinity,
   sortBy: 'edge',
   loading: false,
   error: null,
@@ -621,10 +621,14 @@ async function loadData() {
 
 async function loadMatchups() {
   try {
+    console.log('[SG] loadMatchups: fetching...');
     const data = await api(`matchups?tour=${state.tour}&market=tournament_matchups`);
+    console.log('[SG] loadMatchups: got response, keys:', data ? Object.keys(data) : null);
+    console.log('[SG] loadMatchups: match_list length:', data?.match_list?.length);
     state.matchups = processMatchups(data);
+    console.log('[SG] loadMatchups: processed', state.matchups.length, 'matchups');
   } catch (err) {
-    console.error('loadMatchups error:', err);
+    console.error('[SG] loadMatchups error:', err);
     state.matchups = [];
   }
   render();
@@ -632,10 +636,14 @@ async function loadMatchups() {
 
 async function loadDecompositions() {
   try {
+    console.log('[SG] loadDecompositions: fetching...');
     const data = await api(`decompositions?tour=${state.tour}`);
+    console.log('[SG] loadDecompositions: got response, keys:', data ? Object.keys(data) : null);
+    console.log('[SG] loadDecompositions: players length:', data?.players?.length);
     state.decompositions = processDecompositions(data);
+    console.log('[SG] loadDecompositions: processed', state.decompositions.length, 'players');
   } catch (err) {
-    console.error('loadDecompositions error:', err);
+    console.error('[SG] loadDecompositions error:', err);
     state.decompositions = [];
   }
   render();
@@ -941,40 +949,51 @@ function renderMatchupsTab(el) {
     return;
   }
 
-  const cards = state.matchups.map(m => {
-    const ec = edgeColor(m.bestEdge);
-    const tier = tierInfo(m.bestEdge);
-    return `
-      <div class="matchup-card ${tier.cls}" style="border-color:${m.bestEdge >= 5 ? ec+'22' : 'var(--border)'}; background:${m.bestEdge >= 5 ? ec+'08' : 'transparent'}">
-        <div class="matchup-players">
-          <div class="matchup-player">
-            <span class="name ${m.bestSide === 'p1' ? 'pick' : 'fade'}">${m.p1}</span>
-            ${m.p1Odds ? `<span class="odds">(${decToAmerican(m.p1Odds)})</span>` : ''}
-          </div>
-          <div class="matchup-player">
-            <span class="name ${m.bestSide === 'p2' ? 'pick' : 'fade'}">${m.p2}</span>
-            ${m.p2Odds ? `<span class="odds">(${decToAmerican(m.p2Odds)})</span>` : ''}
-          </div>
-        </div>
-        <div class="matchup-model-col">
-          <div class="matchup-model-label">DG MODEL</div>
-          <div class="matchup-model-value">${(m.dgP1*100).toFixed(0)}-${((1-m.dgP1)*100).toFixed(0)}</div>
-        </div>
-        <div class="edge-badge" style="background:${ec}15">
-          <div class="edge-value" style="color:${ec}">${m.bestEdge >= 0 ? '+' : ''}${m.bestEdge.toFixed(1)}%</div>
-          <div class="edge-label" style="color:var(--text3)">${BOOK_NAMES[m.bestBook] || m.bestBook}</div>
-        </div>
-        <div class="tier-label" style="color:${ec}">${tier.text}</div>
-      </div>
-    `;
-  }).join('');
+  try {
+    if (state.matchups.length === 0) {
+      el.innerHTML = '<div class="empty">No matchup data available for this tournament yet.</div>';
+      return;
+    }
 
-  el.innerHTML = `
-    <div style="font-size:13px;color:var(--text3);margin-bottom:16px;">
-      Tournament head-to-head matchups — DG model edge vs. sportsbook odds
-    </div>
-    ${cards || '<div class="empty">No matchup data available for this tournament yet.</div>'}
-  `;
+    const cards = state.matchups.map(m => {
+      const ec = edgeColor(m.bestEdge);
+      const tier = tierInfo(m.bestEdge);
+      const edgeStr = m.bestEdge >= 0 ? `+${m.bestEdge.toFixed(1)}` : m.bestEdge.toFixed(1);
+      return `
+        <div class="matchup-card ${tier.cls}" style="border-color:${m.bestEdge >= 5 ? ec+'22' : 'var(--border)'}; background:${m.bestEdge >= 5 ? ec+'08' : 'transparent'}">
+          <div class="matchup-players">
+            <div class="matchup-player">
+              <span class="name ${m.bestSide === 'p1' ? 'pick' : 'fade'}">${m.p1}</span>
+              ${m.p1Odds ? `<span class="odds">(${decToAmerican(m.p1Odds)})</span>` : ''}
+            </div>
+            <div class="matchup-player">
+              <span class="name ${m.bestSide === 'p2' ? 'pick' : 'fade'}">${m.p2}</span>
+              ${m.p2Odds ? `<span class="odds">(${decToAmerican(m.p2Odds)})</span>` : ''}
+            </div>
+          </div>
+          <div class="matchup-model-col">
+            <div class="matchup-model-label">DG MODEL</div>
+            <div class="matchup-model-value">${(m.dgP1*100).toFixed(0)}-${((1-m.dgP1)*100).toFixed(0)}</div>
+          </div>
+          <div class="edge-badge" style="background:${ec}15">
+            <div class="edge-value" style="color:${ec}">${edgeStr}%</div>
+            <div class="edge-label" style="color:var(--text3)">${BOOK_NAMES[m.bestBook] || m.bestBook}</div>
+          </div>
+          <div class="tier-label" style="color:${ec}">${tier.text}</div>
+        </div>
+      `;
+    }).join('');
+
+    el.innerHTML = `
+      <div style="font-size:13px;color:var(--text3);margin-bottom:16px;">
+        ${state.matchups.length} head-to-head matchups — DG model edge vs. sportsbook odds
+      </div>
+      ${cards}
+    `;
+  } catch (err) {
+    console.error('renderMatchupsTab error:', err);
+    el.innerHTML = `<div class="error-bar">Error rendering matchups: ${err.message}</div>`;
+  }
 }
 
 function renderSkillsTab(el) {
@@ -984,48 +1003,59 @@ function renderSkillsTab(el) {
     return;
   }
 
-  function sgBar(value, label, color, max) {
-    const width = Math.min(Math.abs(value) / max * 100, 100);
-    const isNeg = value < 0;
-    const fillStyle = isNeg
-      ? `right:50%;width:${width/2}%;background:linear-gradient(90deg,var(--red),rgba(239,68,68,0.3));`
-      : `left:50%;width:${width/2}%;background:linear-gradient(90deg,${color}33,${color});`;
-    const valColor = isNeg ? 'var(--red)' : color;
-    return `
-      <div class="sg-row">
-        <div class="sg-label">${label}</div>
-        <div class="sg-bar-track">
-          <div class="sg-bar-fill" style="${fillStyle}border-radius:3px;"></div>
-          <div class="sg-bar-center"></div>
+  try {
+    if (state.decompositions.length === 0) {
+      el.innerHTML = '<div class="empty">No skill data available for this tournament yet.</div>';
+      return;
+    }
+
+    function sgBar(value, label, color, max) {
+      const v = value || 0;
+      const width = Math.min(Math.abs(v) / max * 100, 100);
+      const isNeg = v < 0;
+      const fillStyle = isNeg
+        ? `right:50%;width:${width/2}%;background:linear-gradient(90deg,var(--red),rgba(239,68,68,0.3));`
+        : `left:50%;width:${width/2}%;background:linear-gradient(90deg,${color}33,${color});`;
+      const valColor = isNeg ? 'var(--red)' : color;
+      return `
+        <div class="sg-row">
+          <div class="sg-label">${label}</div>
+          <div class="sg-bar-track">
+            <div class="sg-bar-fill" style="${fillStyle}border-radius:3px;"></div>
+            <div class="sg-bar-center"></div>
+          </div>
+          <div class="sg-value" style="color:${valColor}">${v > 0 ? '+' : ''}${v.toFixed(2)}</div>
         </div>
-        <div class="sg-value" style="color:${valColor}">${value > 0 ? '+' : ''}${value.toFixed(2)}</div>
+      `;
+    }
+
+    const cards = state.decompositions.map(p => `
+      <div class="skill-card">
+        <div class="skill-header">
+          <div class="skill-name">${p.name}</div>
+          <div class="skill-total">${p.overall > 0 ? '+' : ''}${p.overall.toFixed(2)}</div>
+        </div>
+        ${sgBar(p.ott, 'OTT', 'var(--blue)', 0.15)}
+        ${sgBar(p.app, 'APP', 'var(--purple)', 0.05)}
+        ${sgBar(p.arg, 'ARG', 'var(--yellow)', 0.1)}
+        ${sgBar(p.putt, 'PUTT', 'var(--pink)', 0.3)}
+        <div class="sg-divider">
+          ${sgBar(p.fit, 'FIT', 'var(--green)', 0.15)}
+          ${sgBar(p.courseHistory, 'CRSE', 'var(--cyan)', 0.2)}
+        </div>
       </div>
+    `).join('');
+
+    el.innerHTML = `
+      <div style="font-size:13px;color:var(--text3);margin-bottom:16px;">
+        Strokes gained decomposition — ${state.decompositions.length} players — see who fits the course this week
+      </div>
+      <div class="skill-grid">${cards}</div>
     `;
+  } catch (err) {
+    console.error('renderSkillsTab error:', err);
+    el.innerHTML = `<div class="error-bar">Error rendering skills: ${err.message}</div>`;
   }
-
-  const cards = state.decompositions.map(p => `
-    <div class="skill-card">
-      <div class="skill-header">
-        <div class="skill-name">${p.name}</div>
-        <div class="skill-total">${p.overall > 0 ? '+' : ''}${p.overall.toFixed(2)}</div>
-      </div>
-      ${sgBar(p.ott, 'OTT', 'var(--blue)', 0.15)}
-      ${sgBar(p.app, 'APP', 'var(--purple)', 0.05)}
-      ${sgBar(p.arg, 'ARG', 'var(--yellow)', 0.1)}
-      ${sgBar(p.putt, 'PUTT', 'var(--pink)', 0.3)}
-      <div class="sg-divider">
-        ${sgBar(p.fit, 'FIT', 'var(--green)', 0.15)}
-        ${sgBar(p.courseHistory, 'CRSE', 'var(--cyan)', 0.2)}
-      </div>
-    </div>
-  `).join('');
-
-  el.innerHTML = `
-    <div style="font-size:13px;color:var(--text3);margin-bottom:16px;">
-      Strokes gained decomposition — see who fits the course this week
-    </div>
-    <div class="skill-grid">${cards}</div>
-  `;
 }
 
 function renderTrackerTab(el) {
