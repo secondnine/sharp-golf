@@ -624,6 +624,7 @@ async function loadMatchups() {
     const data = await api(`matchups?tour=${state.tour}&market=tournament_matchups`);
     state.matchups = processMatchups(data);
   } catch (err) {
+    console.error('loadMatchups error:', err);
     state.matchups = [];
   }
   render();
@@ -634,6 +635,7 @@ async function loadDecompositions() {
     const data = await api(`decompositions?tour=${state.tour}`);
     state.decompositions = processDecompositions(data);
   } catch (err) {
+    console.error('loadDecompositions error:', err);
     state.decompositions = [];
   }
   render();
@@ -756,7 +758,7 @@ function processMatchups(raw) {
       p1Odds: bestP1Odds,
       p2Odds: bestP2Odds,
     };
-  }).filter(m => m.bestEdge > -50 && m.bestBook !== '').sort((a, b) => b.bestEdge - a.bestEdge);
+  }).filter(m => m.bestBook !== '').sort((a, b) => b.bestEdge - a.bestEdge);
 }
 
 function processDecompositions(raw) {
@@ -841,9 +843,9 @@ function renderTabs() {
 function renderContent() {
   const el = document.getElementById('content');
 
-  if (state.error) {
+  if (state.error && (state.tab === 'value')) {
     el.innerHTML = `<div class="error-bar">API Error: ${state.error}. Make sure your DG_API_KEY is set in Railway environment variables.</div>`;
-    if (state.tab !== 'tracker') return;
+    return;
   }
 
   switch (state.tab) {
@@ -873,6 +875,7 @@ function renderValueTab(el) {
       <div class="spacer"></div>
       <label>Min Edge:</label>
       <div class="pill-group">
+        <button class="pill pill-sm ${state.minEdge === -Infinity ? 'active' : ''}" onclick="setMinEdge(-Infinity)">All</button>
         ${[0, 2, 5, 10].map(v =>
           `<button class="pill pill-sm ${state.minEdge === v ? 'active' : ''}" onclick="setMinEdge(${v})">${v}%</button>`
         ).join('')}
@@ -911,7 +914,7 @@ function renderValueTab(el) {
           <div class="odds-book">${BOOK_NAMES[bet.bestBook] || bet.bestBook}</div>
         </div>
         <div class="edge-badge" style="background:${ec}15">
-          <div class="edge-value" style="color:${ec}">+${bet.edge.toFixed(1)}%</div>
+          <div class="edge-value" style="color:${ec}">${bet.edge >= 0 ? '+' : ''}${bet.edge.toFixed(1)}%</div>
           <div class="edge-label" style="color:${ec}">EDGE</div>
         </div>
         <div class="tier-label" style="color:${ec}">${tier.text}</div>
@@ -938,7 +941,7 @@ function renderMatchupsTab(el) {
     return;
   }
 
-  const cards = state.matchups.slice(0, 30).map(m => {
+  const cards = state.matchups.map(m => {
     const ec = edgeColor(m.bestEdge);
     const tier = tierInfo(m.bestEdge);
     return `
@@ -958,7 +961,7 @@ function renderMatchupsTab(el) {
           <div class="matchup-model-value">${(m.dgP1*100).toFixed(0)}-${((1-m.dgP1)*100).toFixed(0)}</div>
         </div>
         <div class="edge-badge" style="background:${ec}15">
-          <div class="edge-value" style="color:${ec}">+${m.bestEdge.toFixed(1)}%</div>
+          <div class="edge-value" style="color:${ec}">${m.bestEdge >= 0 ? '+' : ''}${m.bestEdge.toFixed(1)}%</div>
           <div class="edge-label" style="color:var(--text3)">${BOOK_NAMES[m.bestBook] || m.bestBook}</div>
         </div>
         <div class="tier-label" style="color:${ec}">${tier.text}</div>
@@ -1129,8 +1132,6 @@ function setMarket(m) {
 function setTab(t) {
   state.tab = t;
   render();
-  if (t === 'matchups' && !state.matchups) loadMatchups();
-  if (t === 'skills' && !state.decompositions) loadDecompositions();
 }
 
 function setMinEdge(v) { state.minEdge = v; render(); }
