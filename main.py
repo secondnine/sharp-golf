@@ -351,13 +351,15 @@ async def get_top20_picks(tour: str = "pga"):
             "form": round(n_form[i], 1),
             "overall": round(n_sg[i], 1),
         }
+        # Weights derived from logistic regression on 2,997 player-events
+        # across 44 PGA Tour events (Feb 2025 - Feb 2026)
         fs = (
-            factors["model"] * 0.25
-            + factors["course"] * 0.20
-            + factors["short_game"] * 0.15
-            + factors["approach"] * 0.10
-            + factors["form"] * 0.20
-            + factors["overall"] * 0.10
+            factors["model"] * 0.269
+            + factors["course"] * 0.133
+            + factors["short_game"] * 0.059
+            + factors["approach"] * 0.056
+            + factors["form"] * 0.150
+            + factors["overall"] * 0.333
         )
         if fs >= 85:
             conf = "LOCK"
