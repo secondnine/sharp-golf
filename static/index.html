@@ -470,6 +470,91 @@ body {
   color: #fca5a5;
 }
 
+/* ─── Top 20 Picks ─── */
+.t20-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: transparent;
+  margin-bottom: 8px;
+  transition: all 0.15s;
+  cursor: pointer;
+}
+.t20-card:hover {
+  border-color: rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.015);
+}
+.t20-card.lock { background: rgba(0,255,135,0.05); border-color: rgba(0,255,135,0.15); }
+.t20-card.high { background: rgba(96,165,250,0.05); border-color: rgba(96,165,250,0.12); }
+.t20-card.solid { background: rgba(251,191,36,0.04); border-color: rgba(251,191,36,0.1); }
+
+.t20-left { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1; }
+.t20-rank {
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 12px; font-weight: 600;
+  background: rgba(255,255,255,0.04); color: var(--text3);
+  flex-shrink: 0;
+}
+.t20-card.lock .t20-rank, .t20-card.high .t20-rank {
+  background: rgba(0,255,135,0.12); color: var(--green);
+}
+.t20-player { min-width: 0; }
+.t20-player-name { font-weight: 600; font-size: 15px; }
+.t20-player-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
+
+.t20-score { flex-shrink: 0; text-align: center; }
+.t20-score svg text { font-family: var(--mono); }
+
+.t20-odds { text-align: center; min-width: 75px; flex-shrink: 0; }
+.t20-odds-value { font-family: var(--mono); font-size: 17px; font-weight: 700; }
+.t20-odds-book { font-size: 10px; color: var(--text3); margin-top: 2px; }
+
+.conf-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+.factors-grid {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  width: 100%;
+}
+.factor-item { flex: 1; min-width: 80px; }
+.factor-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  margin-bottom: 3px;
+}
+.factor-label { color: var(--text3); font-weight: 600; letter-spacing: 0.03em; }
+.factor-val { font-family: var(--mono); font-weight: 600; }
+.factor-track {
+  height: 4px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.factor-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s;
+}
+
 /* ─── Responsive ─── */
 @media (max-width: 768px) {
   .header { padding: 12px 16px; }
@@ -483,6 +568,10 @@ body {
   .tracker-stat { min-width: 80px; padding: 10px 14px; }
   .bet-date { width: 60px; font-size: 11px; }
   .bet-market { display: none; }
+  .t20-card { flex-wrap: wrap; padding: 12px 14px; gap: 10px; }
+  .t20-odds { min-width: 60px; }
+  .factors-grid { gap: 4px; }
+  .factor-item { min-width: 65px; }
 }
 </style>
 </head>
@@ -513,7 +602,7 @@ body {
 const state = {
   tour: 'pga',
   market: 'win',
-  tab: 'value',
+  tab: 'top20',
   minEdge: -Infinity,
   sortBy: 'edge',
   loading: false,
@@ -523,6 +612,9 @@ const state = {
   matchups: null,
   decompositions: null,
   predictions: null,
+  top20: null,
+  top20Filter: 'all',
+  top20Sort: 'score',
   bets: JSON.parse(localStorage.getItem('sharp_golf_bets') || '[]'),
 };
 
@@ -645,6 +737,22 @@ async function loadDecompositions() {
   } catch (err) {
     console.error('[SG] loadDecompositions error:', err);
     state.decompositions = [];
+  }
+  render();
+}
+
+async function loadTop20() {
+  try {
+    console.log('[SG] loadTop20: fetching...');
+    const data = await api(`top20-picks?tour=${state.tour}`);
+    console.log('[SG] loadTop20: got', data?.picks?.length, 'picks');
+    state.top20 = data.picks || [];
+    if (data.event_name && !state.tournament) {
+      state.tournament = { name: data.event_name, course: '', tour: '' };
+    }
+  } catch (err) {
+    console.error('[SG] loadTop20 error:', err);
+    state.top20 = [];
   }
   render();
 }
@@ -834,7 +942,9 @@ function renderTournamentInfo() {
 
 function renderTabs() {
   const valueBets = state.outrights ? state.outrights.filter(d => d.edge >= 2).length : 0;
+  const top20Count = state.top20 ? state.top20.filter(p => p.confidence === 'LOCK' || p.confidence === 'HIGH').length : 0;
   const tabs = [
+    { key: 'top20', label: 'Top 20 Picks', count: top20Count },
     { key: 'value', label: 'Value Finder', count: valueBets },
     { key: 'matchups', label: 'Matchups', count: 0 },
     { key: 'skills', label: 'Skill Breakdown', count: 0 },
@@ -857,10 +967,124 @@ function renderContent() {
   }
 
   switch (state.tab) {
+    case 'top20': renderTop20Tab(el); break;
     case 'value': renderValueTab(el); break;
     case 'matchups': renderMatchupsTab(el); break;
     case 'skills': renderSkillsTab(el); break;
     case 'tracker': renderTrackerTab(el); break;
+  }
+}
+
+function renderTop20Tab(el) {
+  if (!state.top20) {
+    el.innerHTML = '<div class="loading"><div class="primary">Loading Top 20 picks...</div><div class="secondary">Analyzing field, odds, and course fit</div></div>';
+    loadTop20();
+    return;
+  }
+
+  try {
+    let data = [...state.top20];
+
+    // Odds filter
+    if (state.top20Filter !== 'all') {
+      data = data.filter(p => {
+        const odds = parseInt(p.best_odds);
+        if (isNaN(odds)) return false;
+        if (state.top20Filter === 'fav') return odds >= -150 && odds <= 150;
+        if (state.top20Filter === 'mid') return odds > 150 && odds <= 300;
+        if (state.top20Filter === 'long') return odds > 300;
+        return true;
+      });
+    }
+
+    // Sort
+    if (state.top20Sort === 'odds') {
+      data.sort((a, b) => parseInt(b.best_odds) - parseInt(a.best_odds));
+    } else if (state.top20Sort === 'prob') {
+      data.sort((a, b) => b.dg_top20_prob - a.dg_top20_prob);
+    } else {
+      data.sort((a, b) => b.floor_score - a.floor_score);
+    }
+
+    const controls = `
+      <div class="controls">
+        <label>Odds:</label>
+        <div class="pill-group">
+          ${[{k:'all',l:'All'},{k:'fav',l:'-150 to +150'},{k:'mid',l:'+150 to +300'},{k:'long',l:'+300+'}].map(f =>
+            `<button class="pill pill-sm ${state.top20Filter === f.k ? 'active' : ''}" onclick="setTop20Filter('${f.k}')">${f.l}</button>`
+          ).join('')}
+        </div>
+        <div class="spacer"></div>
+        <label>Sort:</label>
+        <div class="pill-group">
+          ${[{k:'score',l:'Floor Score'},{k:'prob',l:'DG Prob'},{k:'odds',l:'Odds'}].map(s =>
+            `<button class="pill pill-sm ${state.top20Sort === s.k ? 'active' : ''}" onclick="setTop20Sort('${s.k}')">${s.l}</button>`
+          ).join('')}
+        </div>
+      </div>
+    `;
+
+    if (data.length === 0) {
+      el.innerHTML = controls + '<div class="empty">No picks match your filters.</div>';
+      return;
+    }
+
+    const cards = data.map((pick, i) => {
+      const fs = pick.floor_score;
+      const conf = pick.confidence;
+      const cls = conf === 'LOCK' ? 'lock' : conf === 'HIGH' ? 'high' : conf === 'SOLID' ? 'solid' : '';
+
+      // Score ring color
+      const sc = fs >= 85 ? 'var(--green)' : fs >= 75 ? 'var(--blue)' : fs >= 65 ? 'var(--yellow)' : 'var(--text3)';
+      const pct = Math.min(fs, 100);
+      const dash = (pct / 100 * 163.36).toFixed(1);
+
+      // Confidence badge
+      const confColor = conf === 'LOCK' ? 'var(--green)' : conf === 'HIGH' ? 'var(--blue)' : conf === 'SOLID' ? 'var(--yellow)' : 'var(--text3)';
+      const confBg = conf === 'LOCK' ? 'rgba(0,255,135,0.15)' : conf === 'HIGH' ? 'rgba(96,165,250,0.15)' : conf === 'SOLID' ? 'rgba(251,191,36,0.12)' : 'rgba(255,255,255,0.06)';
+
+      // Factor bars
+      const factorNames = {model:'Model',course:'Course',short_game:'Short',approach:'App',form:'Form',overall:'SG'};
+      const factorBars = Object.entries(factorNames).map(([key, label]) => {
+        const v = pick.factors[key] || 0;
+        const fc = v >= 80 ? 'var(--green)' : v >= 60 ? 'var(--green2)' : v >= 40 ? 'var(--yellow)' : 'var(--text3)';
+        return `<div class="factor-item">
+          <div class="factor-header"><span class="factor-label">${label}</span><span class="factor-val" style="color:${fc}">${v.toFixed(0)}</span></div>
+          <div class="factor-track"><div class="factor-fill" style="width:${v}%;background:${fc}"></div></div>
+        </div>`;
+      }).join('');
+
+      return `
+        <div class="t20-card ${cls}" onclick="quickAddBet('${pick.player_name.replace(/'/g, "\\'")}', ${pick.best_odds_dec}, '${pick.best_book}', 'top_20')">
+          <div class="t20-left">
+            <div class="t20-rank">${i + 1}</div>
+            <div class="t20-player">
+              <div class="t20-player-name">${pick.player_name}</div>
+              <div class="t20-player-sub">DG Top 20: ${(pick.dg_top20_prob * 100).toFixed(1)}% &middot; SG: ${pick.sg_total_predicted > 0 ? '+' : ''}${pick.sg_total_predicted.toFixed(2)}</div>
+            </div>
+          </div>
+          <div class="t20-score">
+            <svg width="56" height="56" viewBox="0 0 60 60">
+              <circle cx="30" cy="30" r="26" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="4"/>
+              <circle cx="30" cy="30" r="26" fill="none" stroke="${sc}" stroke-width="4"
+                stroke-dasharray="${dash} 163.36" stroke-linecap="round" transform="rotate(-90 30 30)"/>
+              <text x="30" y="34" text-anchor="middle" fill="${sc}" font-size="14" font-weight="700">${fs.toFixed(0)}</text>
+            </svg>
+          </div>
+          <div class="t20-odds">
+            <div class="t20-odds-value">${pick.best_odds}</div>
+            <div class="t20-odds-book">${BOOK_NAMES[pick.best_book] || pick.best_book}</div>
+          </div>
+          <span class="conf-badge" style="color:${confColor};background:${confBg}">${conf}</span>
+          <div class="factors-grid">${factorBars}</div>
+        </div>
+      `;
+    }).join('');
+
+    el.innerHTML = controls + cards;
+  } catch (err) {
+    console.error('renderTop20Tab error:', err);
+    el.innerHTML = `<div class="error-bar">Error rendering Top 20 picks: ${err.message}</div>`;
   }
 }
 
@@ -1147,6 +1371,7 @@ function setTour(t) {
   state.outrights = null;
   state.matchups = null;
   state.decompositions = null;
+  state.top20 = null;
   state.tournament = null;
   render();
   loadData();
@@ -1166,10 +1391,12 @@ function setTab(t) {
 
 function setMinEdge(v) { state.minEdge = v; render(); }
 function setSortBy(v) { state.sortBy = v; render(); }
+function setTop20Filter(v) { state.top20Filter = v; render(); }
+function setTop20Sort(v) { state.top20Sort = v; render(); }
 
-function quickAddBet(player, odds, book) {
+function quickAddBet(player, odds, book, market) {
   state.bets.push({
-    player, market: state.market, odds, stake: 10, book,
+    player, market: market || state.market, odds, stake: 10, book,
     result: 'pending', date: new Date().toLocaleDateString(),
   });
   saveBets();

@@ -1,5 +1,6 @@
 import os
 import json
+import asyncio
 import httpx
 from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException, Request
@@ -213,6 +214,179 @@ async def get_historical_matchups(
 async def get_players():
     """Get player list with IDs."""
     return await dg_fetch("get-player-list")
+
+
+# ─── Top 20 Picks ────────────────────────────────────────────
+
+SPORTSBOOKS = [
+    "draftkings", "fanduel", "betmgm", "caesars", "pinnacle",
+    "bet365", "bovada", "circa", "betway", "williamhill", "betonline",
+    "betcris", "skybet", "sportsbook", "unibet", "corale", "pointsbet",
+]
+
+
+def dec_to_american(dec: float) -> str | None:
+    if not dec or dec <= 1:
+        return None
+    if dec >= 2:
+        return f"+{round((dec - 1) * 100)}"
+    return f"-{round(100 / (dec - 1))}"
+
+
+async def safe_dg_fetch(endpoint: str, params: dict) -> dict:
+    try:
+        return await dg_fetch(endpoint, params)
+    except Exception:
+        return {}
+
+
+@app.get("/api/top20-picks")
+async def get_top20_picks(tour: str = "pga"):
+    """Top 20 pick recommendations scored by Floor Score system."""
+    predictions, outrights, decomps = await asyncio.gather(
+        safe_dg_fetch("preds/pre-tournament", {"tour": tour, "odds_format": "decimal"}),
+        safe_dg_fetch("betting-tools/outrights", {"tour": tour, "market": "top_20", "odds_format": "decimal"}),
+        safe_dg_fetch("preds/player-decompositions", {"tour": tour}),
+    )
+
+    event_name = outrights.get("event_name", "") or predictions.get("event_name", "")
+
+    # 1. Predictions lookup: dg_id -> top_20 probability
+    pred_lookup: dict[int, float] = {}
+    pred_list = predictions.get("baseline_history_fit", predictions.get("baseline", []))
+    if not isinstance(pred_list, list):
+        pred_list = []
+    for p in pred_list:
+        dg_id = p.get("dg_id")
+        t20 = p.get("top_20", 0)
+        if dg_id and t20 and t20 > 0:
+            pred_lookup[dg_id] = 1.0 / t20  # decimal odds -> probability
+
+    # 2. Outrights lookup: dg_id -> best sportsbook odds
+    odds_list = outrights.get("odds", [])
+    if not isinstance(odds_list, list):
+        odds_list = []
+    odds_lookup: dict[int, dict] = {}
+    for p in odds_list:
+        dg_id = p.get("dg_id")
+        if not dg_id:
+            continue
+        best_dec = 0.0
+        best_book = ""
+        all_odds: dict[str, str] = {}
+        for book in SPORTSBOOKS:
+            val = p.get(book)
+            if val and isinstance(val, (int, float)) and val > 1:
+                am = dec_to_american(val)
+                if am:
+                    all_odds[book] = am
+                if val > best_dec:
+                    best_dec = val
+                    best_book = book
+        if best_dec > 0:
+            odds_lookup[dg_id] = {
+                "best_dec": best_dec,
+                "best_american": dec_to_american(best_dec),
+                "best_book": best_book,
+                "all_odds": all_odds,
+                "player_name": p.get("player_name", ""),
+            }
+
+    # 3. Decompositions lookup: dg_id -> skill data
+    decomps_list = decomps.get("players", [])
+    if not isinstance(decomps_list, list):
+        decomps_list = []
+    decomps_lookup: dict[int, dict] = {}
+    for p in decomps_list:
+        dg_id = p.get("dg_id")
+        if dg_id:
+            decomps_lookup[dg_id] = p
+
+    # 4. Merge and filter by odds range (-200 to +500 = decimal 1.5 to 6.0)
+    merged = []
+    for dg_id, odds in odds_lookup.items():
+        if odds["best_dec"] < 1.5 or odds["best_dec"] > 6.0:
+            continue
+        decomp = decomps_lookup.get(dg_id, {})
+        merged.append({
+            "dg_id": dg_id,
+            "player_name": odds.get("player_name", decomp.get("player_name", "Unknown")),
+            "dg_top20_prob": pred_lookup.get(dg_id, 0),
+            "best_odds": odds["best_american"],
+            "best_odds_dec": odds["best_dec"],
+            "best_book": odds["best_book"],
+            "all_odds": odds["all_odds"],
+            "course_fit": (decomp.get("total_fit_adjustment") or 0) + (decomp.get("total_course_history_adjustment") or 0),
+            "sg_short_game": decomp.get("cf_short_comp") or 0,
+            "sg_approach": decomp.get("cf_approach_comp") or 0,
+            "sg_total_predicted": decomp.get("final_pred") or decomp.get("baseline_pred") or 0,
+            "std_deviation": decomp.get("std_deviation") or 3.0,
+        })
+
+    if not merged:
+        return {"event_name": event_name, "picks": []}
+
+    # 5. Normalize each factor to 0-100
+    def normalize(vals: list[float]) -> list[float]:
+        mn, mx = min(vals), max(vals)
+        if mx == mn:
+            return [50.0] * len(vals)
+        return [(v - mn) / (mx - mn) * 100 for v in vals]
+
+    n_prob = normalize([r["dg_top20_prob"] for r in merged])
+    n_fit = normalize([r["course_fit"] for r in merged])
+    n_short = normalize([r["sg_short_game"] for r in merged])
+    n_app = normalize([r["sg_approach"] for r in merged])
+    n_sg = normalize([r["sg_total_predicted"] for r in merged])
+    n_form = normalize([r["sg_total_predicted"] / max(r["std_deviation"], 0.5) for r in merged])
+
+    # 6. Calculate Floor Score and build response
+    picks = []
+    for i, raw in enumerate(merged):
+        factors = {
+            "model": round(n_prob[i], 1),
+            "course": round(n_fit[i], 1),
+            "short_game": round(n_short[i], 1),
+            "approach": round(n_app[i], 1),
+            "form": round(n_form[i], 1),
+            "overall": round(n_sg[i], 1),
+        }
+        fs = (
+            factors["model"] * 0.25
+            + factors["course"] * 0.20
+            + factors["short_game"] * 0.15
+            + factors["approach"] * 0.10
+            + factors["form"] * 0.20
+            + factors["overall"] * 0.10
+        )
+        if fs >= 85:
+            conf = "LOCK"
+        elif fs >= 75:
+            conf = "HIGH"
+        elif fs >= 65:
+            conf = "SOLID"
+        else:
+            conf = "LEAN"
+
+        picks.append({
+            "player_name": raw["player_name"],
+            "dg_id": raw["dg_id"],
+            "floor_score": round(fs, 1),
+            "dg_top20_prob": round(raw["dg_top20_prob"], 4),
+            "best_odds": raw["best_odds"],
+            "best_odds_dec": round(raw["best_odds_dec"], 4),
+            "best_book": raw["best_book"],
+            "all_odds": raw["all_odds"],
+            "course_fit": round(raw["course_fit"], 4),
+            "sg_short_game": round(raw["sg_short_game"], 4),
+            "sg_approach": round(raw["sg_approach"], 4),
+            "sg_total_predicted": round(raw["sg_total_predicted"], 4),
+            "confidence": conf,
+            "factors": factors,
+        })
+
+    picks.sort(key=lambda x: x["floor_score"], reverse=True)
+    return {"event_name": event_name, "picks": picks[:30]}
 
 
 # ─── Serve Frontend ──────────────────────────────────────────
