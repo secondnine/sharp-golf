@@ -399,3 +399,8 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 @app.get("/", response_class=HTMLResponse)
 async def serve_app():
     return FileResponse("static/index.html")
+
+
+@app.get("/pizza", response_class=HTMLResponse)
+async def serve_pizza():
+    return FileResponse("static/hanks-pizza-shop.html")

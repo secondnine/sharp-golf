@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Hank's Pizza Shop</title>
+<style>
+  :root{
+    --crust:#FFEFD6;
+    --card:#FFFDF8;
+    --tomato:#D8402F;
+    --tomato-dark:#B02E20;
+    --cheese:#F5A623;
+    --cheese-light:#FFD98A;
+    --basil:#2F7D4F;
+    --basil-light:#DFF0E4;
+    --ink:#40261A;
+    --ink-soft:#8A6A56;
+    --bad:#C0392B;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none; -webkit-user-select:none;}
+  html,body{margin:0; padding:0; height:100%; overscroll-behavior:none;}
+  body{
+    background:var(--crust);
+    color:var(--ink);
+    font-family: ui-rounded, "SF Pro Rounded", "Arial Rounded MT Bold", "Nunito", "Segoe UI", sans-serif;
+    display:flex; flex-direction:column;
+    height:100dvh;
+  }
+  /* checkerboard tablecloth strip */
+  .checker{
+    height:14px; flex:none;
+    background:
+      repeating-conic-gradient(var(--tomato) 0% 25%, #fff 0% 50%) 0 0/28px 28px;
+    border-bottom:3px solid var(--ink);
+  }
+  header{
+    flex:none;
+    background:var(--ink);
+    color:var(--cheese-light);
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 16px;
+    font-size:20px; font-weight:800;
+  }
+  header .cash{color:#fff; background:var(--basil); border:3px solid #fff; border-radius:14px; padding:4px 14px;}
+  main{flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:16px; display:flex; flex-direction:column; gap:14px;}
+  h1{font-size:34px; margin:0; line-height:1.1;}
+  h2{font-size:24px; margin:0;}
+  p{margin:0; line-height:1.45;}
+  .muted{color:var(--ink-soft);}
+  .card{
+    background:var(--card);
+    border:3px solid var(--ink);
+    border-radius:20px;
+    padding:16px;
+  }
+  button{
+    font-family:inherit; font-weight:800; color:var(--ink);
+    background:var(--cheese);
+    border:3px solid var(--ink);
+    border-radius:18px;
+    padding:14px 18px;
+    font-size:20px;
+    min-height:56px;
+    box-shadow:0 4px 0 var(--ink);
+    cursor:pointer;
+  }
+  button:active{transform:translateY(3px); box-shadow:0 1px 0 var(--ink);}
+  button.green{background:var(--basil); color:#fff;}
+  button.red{background:var(--tomato); color:#fff;}
+  button.plain{background:#fff;}
+  button:disabled{opacity:.45; box-shadow:none; transform:none;}
+  .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center;}
+  .grow{flex:1;}
+  .big-btn{width:100%; font-size:24px; padding:18px;}
+  .pill{border:3px solid var(--ink); border-radius:999px; padding:4px 12px; font-weight:800; background:#fff; font-size:16px;}
+  .pill.gold{background:var(--cheese-light);}
+  .center{text-align:center;}
+
+  /* number pad */
+  .pad{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; max-width:360px; margin:0 auto; width:100%;}
+  .pad button{font-size:28px; min-height:62px;}
+  .answer-box{
+    font-size:36px; font-weight:800; text-align:center;
+    background:#fff; border:3px solid var(--ink); border-radius:16px;
+    padding:10px; min-height:64px; letter-spacing:2px;
+  }
+  .timerbar{height:16px; border:3px solid var(--ink); border-radius:999px; overflow:hidden; background:#fff;}
+  .timerbar > div{height:100%; background:var(--basil); transition:width .25s linear;}
+  .timerbar.low > div{background:var(--tomato);}
+
+  .topping-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:10px;}
+  .topping-grid button{font-size:17px; padding:10px;}
+  .topping-grid button.on{background:var(--basil); color:#fff;}
+  .topping-grid button.locked{background:#e8e0d5; color:var(--ink-soft); box-shadow:none;}
+
+  .price-stepper{display:flex; align-items:center; gap:14px; justify-content:center;}
+  .price-stepper .val{font-size:40px; font-weight:800; min-width:110px; text-align:center;}
+  .price-stepper button{font-size:30px; width:64px;}
+
+  .menu-item{display:flex; align-items:center; gap:12px; border:3px solid var(--ink); border-radius:16px; padding:10px; background:#fff;}
+  .menu-item .nm{font-weight:800; font-size:18px;}
+  .speech{
+    background:#fff; border:3px solid var(--ink); border-radius:20px; padding:14px 16px;
+    font-size:22px; font-weight:700; position:relative;
+  }
+  .toast{
+    position:fixed; left:50%; transform:translateX(-50%);
+    bottom:24px; background:var(--ink); color:#fff; font-weight:800;
+    padding:12px 20px; border-radius:16px; font-size:20px; z-index:50;
+    border:3px solid #fff; max-width:90%; text-align:center;
+    opacity:0; transition:opacity .25s;
+    pointer-events:none;
+  }
+  .toast.show{opacity:1;}
+  .chart{width:100%; height:auto;}
+  input[type=text]{
+    font-family:inherit; font-size:22px; font-weight:700; color:var(--ink);
+    border:3px solid var(--ink); border-radius:14px; padding:12px; width:100%;
+    background:#fff; user-select:text; -webkit-user-select:text;
+  }
+  .stars{font-size:26px; letter-spacing:4px;}
+  .hidden{display:none !important;}
+  .customer-face{font-size:56px; line-height:1;}
+  .fadein{animation:pop .3s ease;}
+  @keyframes pop{from{transform:scale(.92); opacity:0;} to{transform:scale(1); opacity:1;}}
+  @media (prefers-reduced-motion: reduce){ .fadein{animation:none;} }
+</style>
+</head>
+<body>
+<header>
+  <span id="hdr-day">Hank's Pizza Shop</span>
+  <span class="cash" id="hdr-cash">$0</span>
+</header>
+<div class="checker"></div>
+<main id="screen"></main>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+
+/* ================= DATA ================= */
+
+const TOPPINGS = [
+  {id:"cheese",    name:"Extra Cheese", emoji:"🧀", cost:1, unlockDay:1},
+  {id:"pepperoni", name:"Pepperoni",    emoji:"🍕", cost:1, unlockDay:1},
+  {id:"mushroom",  name:"Mushrooms",    emoji:"🍄", cost:1, unlockDay:1},
+  {id:"pepper",    name:"Peppers",      emoji:"🫑", cost:1, unlockDay:2},
+  {id:"olive",     name:"Olives",       emoji:"🫒", cost:1, unlockDay:3},
+  {id:"pineapple", name:"Pineapple",    emoji:"🍍", cost:2, unlockDay:4},
+  {id:"bacon",     name:"Bacon",        emoji:"🥓", cost:2, unlockDay:5},
+  {id:"shrimp",    name:"Shrimp",       emoji:"🦐", cost:3, unlockDay:6},
+];
+
+const FACES = ["😀","🧑‍🦱","👧","🧔","👵","👦","👩‍🦰","🧑‍🎤","👮","🧑‍🚀","🤠","🧙"];
+const NAME_IDEAS = ["The Volcano","Cheese Please","Meteor Melt","Green Machine","The Slam Dunk","Birdie Special","Hole-in-One","The Hank Attack","Lava Flow","Super Slice"];
+
+const DIFF = {
+  rookie:{label:"Rookie", desc:"Adding up orders (ages ~6–8)", maxQty:3, twoItems:false, change:false, custPerDay:6, time:45},
+  chef:{label:"Chef", desc:"Times tables & deals (ages ~8–10)", maxQty:4, twoItems:false, change:false, custPerDay:8, time:32},
+  tycoon:{label:"Tycoon", desc:"Big orders & making change (ages ~10+)", maxQty:5, twoItems:true, change:true, custPerDay:9, time:30},
+};
+
+/* ================= STATE ================= */
+
+let S = null;
+
+function freshState(diff){
+  return {
+    diff, day:1, cash:20,
+    inv:{dough:8, sauce:8},
+    tops:{cheese:6, pepperoni:6, mushroom:6},
+    menu:[],
+    history:[],           // per-day {revenue, spent, profit}
+    todaySpent:0, todayRevenue:0, todaySold:0,
+    bestStreak:0,
+  };
+}
+
+function save(){
+  try{ localStorage.setItem("hankPizza", JSON.stringify(S)); }catch(e){}
+}
+function load(){
+  try{
+    const raw = localStorage.getItem("hankPizza");
+    if(raw) return JSON.parse(raw);
+  }catch(e){}
+  return null;
+}
+function wipe(){
+  try{ localStorage.removeItem("hankPizza"); }catch(e){}
+}
+
+/* ================= HELPERS ================= */
+
+const $ = sel => document.querySelector(sel);
+const screen = () => $("#screen");
+function money(n){ return "$" + n; }
+function rand(a){ return a[Math.floor(Math.random()*a.length)]; }
+function ri(min,max){ return min + Math.floor(Math.random()*(max-min+1)); }
+
+function setHeader(){
+  $("#hdr-day").textContent = S ? ("Day " + S.day + " · Hank's Pizza Shop") : "Hank's Pizza Shop";
+  $("#hdr-cash").textContent = S ? money(S.cash) : "$0";
+}
+
+let toastTimer = null;
+function toast(msg){
+  const t = $("#toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.remove("show"), 2200);
+}
+
+function pizzaCost(p){
+  let c = 2; // dough + sauce
+  p.toppings.forEach(id=>{ c += TOPPINGS.find(t=>t.id===id).cost; });
+  return c;
+}
+
+function pizzaSVG(toppingIds, size){
+  size = size || 200;
+  const spots = [[0,-38],[34,-18],[-34,-18],[0,6],[36,22],[-36,22],[0,46],[22,-46],[-22,-46],[48,-2],[-48,-2],[18,28],[-18,28],[8,-16],[-8,64],[30,52],[-30,52]];
+  let deco = "";
+  let si = 0;
+  toppingIds.forEach((id)=>{
+    const t = TOPPINGS.find(x=>x.id===id);
+    for(let k=0;k<4;k++){
+      const s = spots[si % spots.length]; si++;
+      deco += '<text x="'+(100+s[0])+'" y="'+(105+s[1])+'" font-size="22" text-anchor="middle">'+t.emoji+'</text>';
+    }
+  });
+  return '<svg class="fadein" viewBox="0 0 200 200" width="'+size+'" height="'+size+'" role="img" aria-label="pizza">'
+    + '<circle cx="100" cy="100" r="92" fill="#E0A459" stroke="#40261A" stroke-width="5"/>'
+    + '<circle cx="100" cy="100" r="76" fill="#F2C14E"/>'
+    + '<circle cx="100" cy="100" r="74" fill="#E8503A" opacity="0.35"/>'
+    + '<circle cx="100" cy="100" r="72" fill="#F7CE5B" opacity="0.85"/>'
+    + deco + '</svg>';
+}
+
+/* ================= SCREENS ================= */
+
+function showStart(){
+  const saved = load();
+  let html = '<div class="card center fadein">'
+    + pizzaSVG(["pepperoni","mushroom"], 160)
+    + '<h1>Hank\u2019s Pizza Shop</h1>'
+    + '<p class="muted">Buy ingredients. Invent pizzas. Serve customers. Get rich!</p></div>';
+
+  if(saved){
+    html += '<div class="card"><h2>Welcome back!</h2>'
+      + '<p class="muted">Day ' + saved.day + ' · ' + money(saved.cash) + ' in the register</p>'
+      + '<div class="row" style="margin-top:10px">'
+      + '<button class="green grow" id="btn-continue">Keep playing</button>'
+      + '<button class="plain" id="btn-new">Start over</button>'
+      + '</div></div>';
+  } else {
+    html += '<div class="card"><h2>Pick your level</h2><div style="display:flex; flex-direction:column; gap:10px; margin-top:10px">';
+    for(const key in DIFF){
+      html += '<button class="big-btn" data-diff="'+key+'">'+DIFF[key].label+'<br><span style="font-size:15px; font-weight:600">'+DIFF[key].desc+'</span></button>';
+    }
+    html += '</div></div>';
+  }
+  screen().innerHTML = html;
+
+  if(saved){
+    $("#btn-continue").onclick = ()=>{ S = saved; setHeader(); showMorning(); };
+    $("#btn-new").onclick = ()=>{ wipe(); showStart(); };
+  } else {
+    document.querySelectorAll("[data-diff]").forEach(b=>{
+      b.onclick = ()=>{ S = freshState(b.dataset.diff); setHeader(); save(); showMorning(); };
+    });
+  }
+  setHeader();
+}
+
+function showMorning(){
+  S.todaySpent = 0; S.todayRevenue = 0; S.todaySold = 0;
+  setHeader();
+  const unlockedToday = TOPPINGS.filter(t=>t.unlockDay===S.day && S.day>1);
+  let unlockMsg = "";
+  unlockedToday.forEach(t=>{
+    if(!(t.id in S.tops)) S.tops[t.id] = 0;
+    unlockMsg += '<div class="pill gold" style="margin-top:8px">New topping unlocked: '+t.emoji+' '+t.name+'!</div>';
+  });
+  screen().innerHTML =
+    '<div class="card center fadein"><h1>Good morning!</h1>'
+    + '<p class="muted">It\u2019s Day '+S.day+'. Time to get ready to open.</p>' + unlockMsg + '</div>'
+    + '<div class="card"><h2>Your plan</h2>'
+    + '<p style="margin-top:8px">1. 🛒 Shop the market for ingredients<br>2. 👨‍🍳 Make your menu &amp; set prices<br>3. 🔔 Open the shop and serve customers!</p></div>'
+    + '<button class="big-btn green" id="btn-market">🛒 Go to the market</button>';
+  $("#btn-market").onclick = showMarket;
+  save();
+}
+
+/* ---------- MARKET ---------- */
+
+function marketStock(){
+  // Build today's market offers. Sometimes two pack sizes -> "better deal" question.
+  const offers = [];
+  offers.push({kind:"dough", name:"Pizza Dough", emoji:"🫓", packs:dealPacks(1)});
+  offers.push({kind:"sauce", name:"Tomato Sauce", emoji:"🍅", packs:dealPacks(1)});
+  TOPPINGS.filter(t=>t.unlockDay<=S.day).forEach(t=>{
+    offers.push({kind:"top:"+t.id, name:t.name, emoji:t.emoji, packs:dealPacks(t.cost)});
+  });
+  return offers;
+}
+
+function dealPacks(unitCost){
+  // pack A: small fair price; pack B: bigger, sometimes better deal, sometimes worse
+  const aQty = ri(3,5);
+  const aPrice = aQty*unitCost + ri(0,1);
+  const bQty = aQty*2;
+  const better = Math.random() < 0.6;
+  let bPrice = better ? (bQty*unitCost - ri(1,2)) : (bQty*unitCost + ri(2,4));
+  if(bPrice < 1) bPrice = 1;
+  return [{qty:aQty, price:aPrice},{qty:bQty, price:bPrice}];
+}
+
+let market = null;
+
+function showMarket(){
+  market = market && market.day===S.day ? market : {day:S.day, offers:marketStock()};
+  let rows = "";
+  market.offers.forEach((o,i)=>{
+    const have = o.kind==="dough" ? S.inv.dough : o.kind==="sauce" ? S.inv.sauce : (S.tops[o.kind.slice(4)]||0);
+    rows += '<div class="menu-item"><span style="font-size:30px">'+o.emoji+'</span>'
+      + '<div class="grow"><div class="nm">'+o.name+'</div><div class="muted" style="font-size:15px">You have: '+have+'</div></div>'
+      + '<button class="plain" data-buy="'+i+'" data-pack="0">'+o.packs[0].qty+' for '+money(o.packs[0].price)+'</button>'
+      + '<button class="plain" data-buy="'+i+'" data-pack="1">'+o.packs[1].qty+' for '+money(o.packs[1].price)+'</button>'
+      + '</div>';
+  });
+  screen().innerHTML =
+    '<div class="card fadein"><h2>🛒 The Market</h2>'
+    + '<p class="muted" style="margin-top:6px">Every pizza uses 1 dough + 1 sauce + its toppings. Compare the packs — which is the better deal?</p></div>'
+    + '<div style="display:flex; flex-direction:column; gap:10px">'+rows+'</div>'
+    + '<button class="big-btn green" id="btn-kitchen">👨‍🍳 Done shopping — to the kitchen!</button>';
+
+  document.querySelectorAll("[data-buy]").forEach(b=>{
+    b.onclick = ()=>{
+      const o = market.offers[+b.dataset.buy];
+      const p = o.packs[+b.dataset.pack];
+      if(S.cash < p.price){ toast("Not enough money! 💸"); return; }
+      // better-deal feedback (per-unit compare)
+      const other = o.packs[1-(+b.dataset.pack)];
+      const myUnit = p.price/p.qty, otherUnit = other.price/other.qty;
+      S.cash -= p.price; S.todaySpent += p.price;
+      if(o.kind==="dough") S.inv.dough += p.qty;
+      else if(o.kind==="sauce") S.inv.sauce += p.qty;
+      else S.tops[o.kind.slice(4)] = (S.tops[o.kind.slice(4)]||0) + p.qty;
+      if(myUnit <= otherUnit) toast("Nice! That was the better deal 🧠");
+      else toast("Bought! (Psst — the other pack was cheaper per item)");
+      setHeader(); save(); showMarket();
+    };
+  });
+  $("#btn-kitchen").onclick = showKitchen;
+}
+
+/* ---------- KITCHEN ---------- */
+
+function showKitchen(){
+  let menuRows = "";
+  S.menu.forEach((p,i)=>{
+    menuRows += '<div class="menu-item">'
+      + '<span style="font-size:26px">'+(p.toppings.length?TOPPINGS.find(t=>t.id===p.toppings[0]).emoji:"🧀")+'</span>'
+      + '<div class="grow"><div class="nm">'+p.name+'</div>'
+      + '<div class="muted" style="font-size:15px">Costs you '+money(p.cost)+' to make · sells for '+money(p.price)+'</div></div>'
+      + '<button class="plain" data-del="'+i+'">✕</button></div>';
+  });
+  if(!menuRows) menuRows = '<p class="muted center">No pizzas yet — invent your first one!</p>';
+
+  screen().innerHTML =
+    '<div class="card fadein"><h2>👨‍🍳 The Kitchen</h2>'
+    + '<p class="muted" style="margin-top:6px">Supplies: 🫓 '+S.inv.dough+' dough · 🍅 '+S.inv.sauce+' sauce</p></div>'
+    + '<div class="card"><h2>Your menu</h2><div style="display:flex; flex-direction:column; gap:10px; margin-top:10px">'+menuRows+'</div>'
+    + '<button class="big-btn" id="btn-invent" style="margin-top:12px">➕ Invent a pizza</button></div>'
+    + '<button class="big-btn green" id="btn-open" '+(S.menu.length? "":"disabled")+'>🔔 Open the shop!</button>';
+
+  document.querySelectorAll("[data-del]").forEach(b=>{
+    b.onclick = ()=>{ S.menu.splice(+b.dataset.del,1); save(); showKitchen(); };
+  });
+  $("#btn-invent").onclick = ()=>showBuilder();
+  $("#btn-open").onclick = ()=>{
+    if(S.inv.dough<1 || S.inv.sauce<1){ toast("You need dough and sauce to open! Back to the market."); return; }
+    startService();
+  };
+}
+
+function showBuilder(){
+  const picked = [];
+  let price = 6;
+
+  function render(){
+    const cost = 2 + picked.reduce((a,id)=>a+TOPPINGS.find(t=>t.id===id).cost,0);
+    let tops = "";
+    TOPPINGS.forEach(t=>{
+      const unlocked = t.unlockDay<=S.day;
+      const on = picked.includes(t.id);
+      const stock = S.tops[t.id]||0;
+      tops += '<button class="'+(unlocked?(on?"on":""):"locked")+'" data-top="'+t.id+'" '+(unlocked?"":"disabled")+'>'
+        + t.emoji+' '+t.name + (unlocked? '<br><span style="font-size:13px;font-weight:600">'+(on?"added!":"have "+stock)+'</span>' : '<br><span style="font-size:13px">Day '+t.unlockDay+'</span>')
+        + '</button>';
+    });
+    let hint;
+    if(price <= cost) hint = '😬 That price barely covers your '+money(cost)+' cost!';
+    else if(price > cost*4) hint = '🙀 Whoa — customers might say it\u2019s too pricey.';
+    else hint = '👍 Costs '+money(cost)+' to make. You\u2019d earn '+money(price-cost)+' per pizza.';
+
+    screen().innerHTML =
+      '<div class="card center fadein">'+pizzaSVG(picked, 180)+'</div>'
+      + '<div class="card"><h2>Pick toppings</h2><div class="topping-grid" style="margin-top:10px">'+tops+'</div></div>'
+      + '<div class="card"><h2>Name it</h2>'
+      + '<input type="text" id="pz-name" maxlength="24" placeholder="e.g. '+rand(NAME_IDEAS)+'" style="margin-top:10px">'
+      + '</div>'
+      + '<div class="card"><h2>Set the price</h2>'
+      + '<div class="price-stepper" style="margin-top:10px">'
+      + '<button class="plain" id="pr-dn">−</button><span class="val">'+money(price)+'</span><button class="plain" id="pr-up">＋</button></div>'
+      + '<p class="center" style="margin-top:10px">'+hint+'</p></div>'
+      + '<div class="row"><button class="plain grow" id="btn-back">Back</button>'
+      + '<button class="green grow" id="btn-save-pz">Add to menu</button></div>';
+
+    document.querySelectorAll("[data-top]").forEach(b=>{
+      b.onclick = ()=>{
+        const id = b.dataset.top;
+        const i = picked.indexOf(id);
+        if(i>=0) picked.splice(i,1);
+        else if(picked.length>=4){ toast("Max 4 toppings per pizza!"); return; }
+        else picked.push(id);
+        const nm = $("#pz-name").value; render(); $("#pz-name").value = nm;
+      };
+    });
+    $("#pr-dn").onclick = ()=>{ if(price>1){price--; const nm=$("#pz-name").value; render(); $("#pz-name").value=nm;} };
+    $("#pr-up").onclick = ()=>{ if(price<40){price++; const nm=$("#pz-name").value; render(); $("#pz-name").value=nm;} };
+    $("#btn-back").onclick = showKitchen;
+    $("#btn-save-pz").onclick = ()=>{
+      const name = ($("#pz-name").value || "").trim() || rand(NAME_IDEAS);
+      const cost2 = 2 + picked.reduce((a,id)=>a+TOPPINGS.find(t=>t.id===id).cost,0);
+      S.menu.push({name, toppings:picked.slice(), price, cost:cost2});
+      save(); toast("\u201C"+name+"\u201D is on the menu! 🍕"); showKitchen();
+    };
+  }
+  render();
+}
+
+/* ---------- SERVICE ---------- */
+
+let svc = null;
+
+function canMake(p){
+  if(S.inv.dough<1 || S.inv.sauce<1) return false;
+  return p.toppings.every(id=>(S.tops[id]||0) >= 1);
+}
+
+function startService(){
+  const d = DIFF[S.diff];
+  svc = {left:d.custPerDay, streak:0, timer:null};
+  nextCustomer();
+}
+
+function makeOrder(){
+  const d = DIFF[S.diff];
+  const avail = S.menu.filter(canMake);
+  if(avail.length===0) return null;
+  const p1 = rand(avail);
+  const q1 = ri(1, d.maxQty);
+  const order = {items:[{p:p1, q:q1}]};
+  if(d.twoItems && avail.length>1 && Math.random()<0.5){
+    let p2 = rand(avail.filter(p=>p!==p1));
+    if(p2) order.items.push({p:p2, q:ri(1,2)});
+  }
+  order.total = order.items.reduce((a,it)=>a+it.p.price*it.q, 0);
+  // making change round (tycoon): customer pays with a big bill
+  order.change = null;
+  if(d.change && Math.random()<0.5){
+    const bill = order.total<=20 ? 20 : order.total<=50 ? 50 : 100;
+    order.change = bill - order.total;
+    order.bill = bill;
+  }
+  return order;
+}
+
+function orderText(o){
+  const parts = o.items.map(it=>it.q+" \u201C"+it.p.name+"\u201D ("+money(it.p.price)+" each)");
+  let txt = "I\u2019ll take " + parts.join(" and ") + ".";
+  if(o.change!=null) txt += " Here\u2019s "+money(o.bill)+" — what\u2019s my change?";
+  else txt += " What\u2019s my total?";
+  return txt;
+}
+
+function nextCustomer(){
+  clearInterval(svc.timer);
+  if(svc.left<=0){ endDay(); return; }
+  const order = makeOrder();
+  if(!order){
+    toast("You ran out of ingredients — closing early!");
+    endDay(); return;
+  }
+  // Too-pricey check: if any pizza is priced > 4x cost, 40% chance the customer walks
+  const pricey = order.items.some(it=>it.p.price > it.p.cost*4);
+  if(pricey && Math.random()<0.4){
+    svc.left--;
+    screen().innerHTML =
+      '<div class="card center fadein"><div class="customer-face">'+rand(FACES)+'</div>'
+      + '<div class="speech" style="margin-top:10px">'+money(order.items[0].p.price)+' for a \u201C'+order.items[0].p.name+'\u201D?! Too pricey for me!</div>'
+      + '<p class="muted" style="margin-top:10px">They left without buying. Maybe lower that price a little?</p>'
+      + '<button class="big-btn green" style="margin-top:14px" id="btn-next">Next customer</button></div>';
+    $("#btn-next").onclick = nextCustomer;
+    return;
+  }
+  askQuestion(order);
+}
+
+function askQuestion(order){
+  const d = DIFF[S.diff];
+  const answer = order.change!=null ? order.change : order.total;
+  let entry = "";
+  let timeLeft = d.time;
+  let tries = 0;
+
+  screen().innerHTML =
+    '<div class="card fadein"><div class="row">'
+    + '<div class="customer-face">'+rand(FACES)+'</div>'
+    + '<div class="speech grow">'+orderText(order)+'</div></div>'
+    + '<div class="timerbar" style="margin-top:12px"><div id="tbar" style="width:100%"></div></div></div>'
+    + '<div class="answer-box" id="entry">&nbsp;</div>'
+    + '<div class="pad">'
+    + [1,2,3,4,5,6,7,8,9].map(n=>'<button data-k="'+n+'">'+n+'</button>').join("")
+    + '<button data-k="del" class="plain">⌫</button><button data-k="0">0</button><button data-k="go" class="green">✓</button>'
+    + '</div>'
+    + '<p class="center muted">Customers waiting: '+svc.left+'</p>';
+
+  function draw(){ $("#entry").innerHTML = entry ? ("$"+entry) : "&nbsp;"; }
+
+  const bar = $("#tbar");
+  const barWrap = bar.parentElement;
+  svc.timer = setInterval(()=>{
+    timeLeft--;
+    const pct = Math.max(0, timeLeft/d.time*100);
+    bar.style.width = pct+"%";
+    if(pct<30) barWrap.classList.add("low");
+    if(timeLeft<=0){
+      clearInterval(svc.timer);
+      svc.streak = 0; svc.left--;
+      toast("Too slow — they got hangry and left! 😤");
+      setTimeout(nextCustomer, 1200);
+    }
+  }, 1000);
+
+  document.querySelectorAll("[data-k]").forEach(b=>{
+    b.onclick = ()=>{
+      const k = b.dataset.k;
+      if(k==="del"){ entry = entry.slice(0,-1); draw(); return; }
+      if(k==="go"){ submit(); return; }
+      if(entry.length<4){ entry += k; draw(); }
+    };
+  });
+
+  function submit(){
+    if(entry==="") return;
+    if(parseInt(entry,10) === answer){
+      clearInterval(svc.timer);
+      // sale! consume ingredients, add cash (+tip for speed/streak)
+      let qtyTotal = 0;
+      order.items.forEach(it=>{
+        for(let k=0;k<it.q;k++){
+          S.inv.dough--; S.inv.sauce--;
+          it.p.toppings.forEach(id=>S.tops[id]--);
+          qtyTotal++;
+        }
+      });
+      svc.streak++; if(svc.streak>S.bestStreak) S.bestStreak = svc.streak;
+      let tip = 0;
+      if(timeLeft > d.time*0.6) tip = 2;
+      else if(timeLeft > d.time*0.3) tip = 1;
+      if(svc.streak>0 && svc.streak%3===0) tip += 1;
+      S.cash += order.total + tip;
+      S.todayRevenue += order.total + tip;
+      S.todaySold += qtyTotal;
+      svc.left--;
+      setHeader(); save();
+      screen().innerHTML =
+        '<div class="card center fadein"><div class="customer-face">😋</div>'
+        + '<h2 style="margin-top:8px">Correct! '+money(order.total)+' in the register'+(tip? ' + '+money(tip)+' tip!':'')+'</h2>'
+        + (svc.streak>=2 ? '<div class="pill gold" style="margin-top:10px">🔥 '+svc.streak+' in a row!</div>' : '')
+        + '<button class="big-btn green" style="margin-top:14px" id="btn-next">'+(svc.left>0?"Next customer":"Close up shop")+'</button></div>';
+      $("#btn-next").onclick = nextCustomer;
+    } else {
+      tries++;
+      entry = ""; draw();
+      if(tries===1){
+        svc.streak = 0;
+        const it = order.items[0];
+        let hintTxt = order.change!=null
+          ? "Hint: first add up the order, then count up to "+money(order.bill)+"."
+          : (order.items.length>1
+              ? "Hint: work out each pizza first, then add them together."
+              : "Hint: that\u2019s "+it.q+" \u00D7 "+money(it.p.price)+".");
+        toast("Not quite — try once more! "+hintTxt);
+      } else {
+        clearInterval(svc.timer);
+        svc.left--;
+        toast("The answer was "+money(answer)+". They\u2019ll come back tomorrow!");
+        setTimeout(nextCustomer, 1600);
+      }
+    }
+  }
+  draw();
+}
+
+/* ---------- END OF DAY ---------- */
+
+function endDay(){
+  clearInterval(svc && svc.timer);
+  const profit = S.todayRevenue - S.todaySpent;
+  S.history.push({day:S.day, revenue:S.todayRevenue, spent:S.todaySpent, profit});
+  const stars = profit>=15 ? 3 : profit>=6 ? 2 : profit>0 ? 1 : 0;
+
+  // bar chart: revenue vs spent for today + profit line across days
+  const maxV = Math.max(10, S.todayRevenue, S.todaySpent);
+  const bh = v => Math.round(v/maxV*110);
+  let chart = '<svg class="chart" viewBox="0 0 320 160">'
+    + '<line x1="20" y1="140" x2="300" y2="140" stroke="#40261A" stroke-width="3"/>'
+    + '<rect x="60" y="'+(140-bh(S.todayRevenue))+'" width="60" height="'+bh(S.todayRevenue)+'" fill="#2F7D4F" stroke="#40261A" stroke-width="3" rx="6"/>'
+    + '<rect x="190" y="'+(140-bh(S.todaySpent))+'" width="60" height="'+bh(S.todaySpent)+'" fill="#D8402F" stroke="#40261A" stroke-width="3" rx="6"/>'
+    + '<text x="90" y="156" font-size="13" text-anchor="middle" fill="#40261A" font-weight="bold">Money in: '+money(S.todayRevenue)+'</text>'
+    + '<text x="220" y="156" font-size="13" text-anchor="middle" fill="#40261A" font-weight="bold">Money out: '+money(S.todaySpent)+'</text>'
+    + '</svg>';
+
+  let profitLine = "";
+  if(S.history.length>1){
+    const hs = S.history.slice(-7);
+    const maxP = Math.max(1, ...hs.map(h=>Math.abs(h.profit)));
+    const pts = hs.map((h,i)=>{
+      const x = 30 + i*(260/Math.max(1,hs.length-1));
+      const y = 70 - (h.profit/maxP)*50;
+      return x+","+y;
+    }).join(" ");
+    profitLine = '<div class="card"><h2>Profit, day by day</h2>'
+      + '<svg class="chart" viewBox="0 0 320 140" style="margin-top:8px">'
+      + '<line x1="20" y1="70" x2="300" y2="70" stroke="#8A6A56" stroke-width="2" stroke-dasharray="5,5"/>'
+      + '<polyline points="'+pts+'" fill="none" stroke="#2F7D4F" stroke-width="4"/>'
+      + hs.map((h,i)=>{
+          const x = 30 + i*(260/Math.max(1,hs.length-1));
+          const y = 70 - (h.profit/maxP)*50;
+          return '<circle cx="'+x+'" cy="'+y+'" r="6" fill="#F5A623" stroke="#40261A" stroke-width="3"/><text x="'+x+'" y="130" font-size="12" text-anchor="middle" fill="#40261A" font-weight="bold">D'+h.day+'</text>';
+        }).join("")
+      + '</svg><p class="muted center" style="font-size:14px">Above the dotted line = you made money that day</p></div>';
+  }
+
+  const nextUnlock = TOPPINGS.find(t=>t.unlockDay===S.day+1);
+  screen().innerHTML =
+    '<div class="card center fadein"><h1>🌙 Closing time!</h1>'
+    + '<div class="stars" style="margin-top:8px">'+"⭐".repeat(stars)+"☆".repeat(3-stars)+'</div>'
+    + '<h2 style="margin-top:8px">'+(profit>0? "Profit: "+money(profit) : profit===0 ? "You broke even" : "You lost "+money(-profit)+" today")+'</h2>'
+    + '<p class="muted" style="margin-top:6px">'+S.todaySold+' pizzas sold · best streak '+S.bestStreak+'</p></div>'
+    + '<div class="card"><h2>Today\u2019s money</h2>'+chart
+    + '<p class="muted center" style="font-size:14px">Profit = money in − money out</p></div>'
+    + profitLine
+    + (nextUnlock? '<div class="card center"><p>🔓 Tomorrow you unlock: <b>'+nextUnlock.emoji+' '+nextUnlock.name+'</b>!</p></div>' : '')
+    + '<button class="big-btn green" id="btn-tomorrow">😴 Sleep → Day '+(S.day+1)+'</button>';
+
+  S.day++;
+  market = null;
+  save();
+  $("#btn-tomorrow").onclick = showMorning;
+}
+
+/* ================= BOOT ================= */
+showStart();
+</script>
+</body>
+</html>
