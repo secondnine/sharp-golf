@@ -252,6 +252,7 @@ function freshState(diff){
     history:[],
     todaySpent:0, todayRevenue:0, todaySold:0,
     bestStreak:0,
+    totalEarned:0, rescueDay:0,
   };
 }
 
@@ -267,12 +268,32 @@ function load(){
       s.inv.dough = Math.max(0, s.inv.dough||0);
       s.inv.sauce = Math.max(0, s.inv.sauce||0);
       for(const k in s.tops) s.tops[k] = Math.max(0, s.tops[k]||0);
+      if(s.totalEarned==null) s.totalEarned = (s.history||[]).reduce((a,h)=>a+(h.revenue||0),0);
+      if(s.rescueDay==null) s.rescueDay = 0;
       return s;
     }
   }catch(e){}
   return null;
 }
 function wipe(){ try{ localStorage.removeItem("hankPizza"); }catch(e){} }
+
+/* ---- hall of fame (local leaderboard) ---- */
+function loadBoard(){
+  try{
+    const raw = localStorage.getItem("hankPizzaBoard");
+    if(raw) return JSON.parse(raw);
+  }catch(e){}
+  return [];
+}
+function recordCareer(s){
+  if(!s || !s.totalEarned) return;
+  try{
+    const board = loadBoard();
+    board.push({earned:s.totalEarned, days:s.day, when:new Date().toLocaleDateString()});
+    board.sort((a,b)=>b.earned-a.earned);
+    localStorage.setItem("hankPizzaBoard", JSON.stringify(board.slice(0,10)));
+  }catch(e){}
+}
 
 /* ================= HELPERS ================= */
 
@@ -304,6 +325,56 @@ function patienceMax(){
 }
 function custPerDay(){ return DIFF[S.diff].custPerDay + (S.upg.sign ? 3 : 0); }
 function priceyMult(){ return S.upg.menu ? 6 : 4; }
+
+/* ---- Coach's Corner: teaches the business side ---- */
+function coachTips(){
+  const tips = [];
+  const cust = custPerDay();
+  const target = Math.ceil(cust * 1.3); // plan a little extra — some customers order 2+
+  tips.push("📣 About <b>"+cust+" customers</b> are coming today. Some order more than one, so plan for about <b>"+target+" pizzas</b>.");
+
+  if(S.menu.length===0){
+    tips.push("👨‍🍳 First things first: invent a pizza in the Kitchen — you can\u2019t sell what\u2019s not on the menu!");
+    return tips;
+  }
+
+  // shopping list: basics first, then toppings your menu actually uses
+  const needD = Math.max(0, target - S.inv.dough);
+  const needS = Math.max(0, target - S.inv.sauce);
+  const usedTops = {};
+  S.menu.forEach(p=>p.toppings.forEach(id=>{ usedTops[id]=true; }));
+  const share = Math.ceil(target / S.menu.length); // rough split across your menu
+  const needT = [];
+  let estCost = needD*1.2 + needS*1.2;
+  for(const id in usedTops){
+    const t = TOPPINGS.find(x=>x.id===id);
+    const n = Math.max(0, share - (S.tops[id]||0));
+    if(n>0){ needT.push(n+" "+t.emoji+" "+t.name); estCost += n*t.cost; }
+  }
+  estCost = Math.ceil(estCost);
+  const listParts = [];
+  if(needD>0) listParts.push(needD+" 🫓 dough");
+  if(needS>0) listParts.push(needS+" 🍅 sauce");
+  needT.forEach(x=>listParts.push(x));
+
+  if(listParts.length===0){
+    tips.push("✅ Your pantry is stocked for the day. Don\u2019t buy more than you need — leftover money is profit!");
+  } else {
+    tips.push("🛒 Shopping list: <b>"+listParts.join(", ")+"</b> — costs about <b>"+money(estCost)+"</b>. You have <b>"+money(S.cash)+"</b>.");
+    if(estCost > S.cash){
+      tips.push("⚠️ Not enough for the whole list! Buy <b>dough and sauce first</b> — every pizza needs them. Skip the extras today.");
+    }
+  }
+
+  // pricing checkup
+  S.menu.forEach(p=>{
+    const m = p.price - p.cost;
+    if(m<=1) tips.push("💡 \u201C"+p.name+"\u201D costs "+money(p.cost)+" and sells for "+money(p.price)+" — you only earn "+money(m)+" per sale. Raise the price or use cheaper toppings!");
+    else if(p.price > p.cost*priceyMult()) tips.push("🙀 \u201C"+p.name+"\u201D might be priced too high at "+money(p.price)+" — some customers will walk out.");
+  });
+
+  return tips.slice(0,5);
+}
 
 function pizzaCost(picked){
   return 2 + picked.reduce((a,id)=>a+TOPPINGS.find(t=>t.id===id).cost,0);
@@ -376,7 +447,7 @@ function showStart(){
 
   if(saved){
     html += '<div class="card"><h2>Welcome back!</h2>'
-      + '<p class="muted">Day ' + saved.day + ' · ' + money(saved.cash) + ' in the register</p>'
+      + '<p class="muted">Day ' + saved.day + ' · ' + money(saved.cash) + ' in the register · ' + money(saved.totalEarned||0) + ' earned this career</p>'
       + '<div class="row" style="margin-top:10px">'
       + '<button class="green grow" id="btn-continue">Keep playing</button>'
       + '<button class="plain" id="btn-new">Start over</button>'
@@ -388,11 +459,16 @@ function showStart(){
     }
     html += '</div></div>';
   }
+  const board = loadBoard();
+  if(board.length){
+    html += '<div class="card center"><h2>🏆 Best career: '+money(board[0].earned)+'</h2>'
+      + '<p class="muted" style="font-size:15px">'+board[0].days+' days in business — can you beat it?</p></div>';
+  }
   screen().innerHTML = html;
 
   if(saved){
     $("#btn-continue").onclick = ()=>{ S = saved; setHeader(); showHub(true); };
-    $("#btn-new").onclick = ()=>{ wipe(); showStart(); };
+    $("#btn-new").onclick = ()=>{ recordCareer(saved); wipe(); toast("Career saved to the Hall of Fame! 🏆"); showStart(); };
   } else {
     document.querySelectorAll("[data-diff]").forEach(b=>{
       b.onclick = ()=>{ S = freshState(b.dataset.diff); setHeader(); save(); showHub(true); };
@@ -421,6 +497,10 @@ function showHub(newMorning){
   TOPPINGS.filter(t=>t.unlockDay<=S.day).forEach(t=>{
     invHTML += " " + invRow(t.emoji, t.name, S.tops[t.id]||0);
   });
+  // stuck? broke AND nothing on the menu is makeable → once-a-day rescue
+  const stuck = (S.cash < 10) && (!ready || !S.menu.some(canMake));
+  const rescueAvail = stuck && S.rescueDay !== S.day;
+
   screen().innerHTML =
     '<div class="card center fadein"><h1>☀️ Day '+S.day+'</h1>'
     + '<p class="muted" style="margin-top:4px">Morning routine: 1️⃣ check your supplies · 2️⃣ shop the market · 3️⃣ make pizzas · 4️⃣ open!</p></div>'
@@ -428,13 +508,26 @@ function showHub(newMorning){
     + '<div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:6px">'+invHTML+'</div>'
     + (S.inv.dough<=0 || S.inv.sauce<=0 ? '<p style="margin-top:10px; font-weight:800; color:#B02E20">You\u2019re out of basics — hit the market first!</p>' : '')
     + '</div>'
+    + '<div class="card" style="background:var(--basil-light)"><h2>🧢 Coach\u2019s Corner</h2>'
+    + '<div style="margin-top:8px; display:flex; flex-direction:column; gap:8px">'
+    + coachTips().map(t=>'<p style="font-size:16px">'+t+'</p>').join("")
+    + '</div></div>'
+    + (rescueAvail
+        ? '<div class="card center" style="background:var(--cheese-light)"><h2>🐷 Piggy Bank Rescue</h2>'
+          + '<p class="muted" style="margin-top:6px">Every business hits a rough patch. Crack open the piggy bank and restock smart this time!</p>'
+          + '<button class="green" style="margin-top:10px" id="btn-rescue">Take '+money(12)+' from the piggy bank</button></div>'
+        : '')
     + '<div class="hub-grid">'
     + '<button data-go="market"><span class="icon">🛒</span>The Market</button>'
     + '<button data-go="kitchen"><span class="icon">👨‍🍳</span>The Kitchen</button>'
     + '<button data-go="store"><span class="icon">🏬</span>Equipment Store</button>'
     + '<button data-go="open" class="green" '+(ready?"":"disabled")+'><span class="icon">🔔</span>Open the Shop!</button>'
     + '</div>'
-    + (ready? '' : '<p class="center muted">You need dough, sauce, and at least one pizza on the menu before opening.</p>');
+    + (ready? '' : '<p class="center muted">You need dough, sauce, and at least one pizza on the menu before opening.</p>')
+    + '<div class="row" style="margin-top:4px">'
+    + '<button class="plain grow" id="btn-fame" style="font-size:16px; min-height:48px">🏆 Hall of Fame</button>'
+    + '<button class="plain grow" id="btn-restart" style="font-size:16px; min-height:48px">🔄 Start over</button>'
+    + '</div>';
   document.querySelectorAll("[data-go]").forEach(b=>{
     b.onclick = ()=>{
       const go = b.dataset.go;
@@ -444,7 +537,50 @@ function showHub(newMorning){
       else startService();
     };
   });
+  if(rescueAvail){
+    $("#btn-rescue").onclick = ()=>{
+      S.cash += 12; S.rescueDay = S.day;
+      toast("🐷 +$12! Spend it wisely — dough and sauce first.");
+      setHeader(); save(); showHub(false);
+    };
+  }
+  $("#btn-fame").onclick = showBoard;
+  let confirmRestart = false;
+  $("#btn-restart").onclick = ()=>{
+    if(!confirmRestart){
+      confirmRestart = true;
+      $("#btn-restart").textContent = "⚠️ Tap again to end this career";
+      $("#btn-restart").style.background = "#FBD9D3";
+      setTimeout(()=>{ confirmRestart = false; const b=$("#btn-restart"); if(b){ b.textContent="🔄 Start over"; b.style.background=""; } }, 3500);
+      return;
+    }
+    recordCareer(S);
+    wipe(); S = null;
+    toast("Career saved to the Hall of Fame! 🏆");
+    showStart();
+  };
   save();
+}
+
+function showBoard(){
+  screen().className = "";
+  const board = loadBoard();
+  let rows = "";
+  board.forEach((e,i)=>{
+    const medal = i===0? "🥇" : i===1? "🥈" : i===2? "🥉" : (i+1)+".";
+    rows += '<div class="menu-item"><span style="font-size:24px; min-width:40px; text-align:center; font-weight:800">'+medal+'</span>'
+      + '<div class="grow"><div class="nm">'+money(e.earned)+' earned</div>'
+      + '<div class="muted" style="font-size:15px">'+e.days+' days in business · '+e.when+'</div></div></div>';
+  });
+  if(!rows) rows = '<p class="muted center">No finished careers yet. When you start over, your career lands here!</p>';
+  const current = S ? '<div class="card center"><h2>Current career</h2><p style="margin-top:6px; font-size:20px; font-weight:800">'+money(S.totalEarned)+' earned · Day '+S.day+'</p></div>' : '';
+  screen().innerHTML =
+    '<div class="card center fadein"><h1>🏆 Hall of Fame</h1>'
+    + '<p class="muted" style="margin-top:4px">Biggest careers ever at Hank\u2019s Pizza Shop</p></div>'
+    + current
+    + '<div style="display:flex; flex-direction:column; gap:10px">'+rows+'</div>'
+    + '<button class="big-btn" id="btn-fame-back">⬅ Back</button>';
+  $("#btn-fame-back").onclick = ()=>{ if(S) showHub(false); else showStart(); };
 }
 
 /* ================= MARKET (vendors) ================= */
@@ -931,6 +1067,7 @@ function openSheet(c){
       if(svc.streak>0 && svc.streak%3===0) tip += 1;
       S.cash += order.total + tip;
       S.todayRevenue += order.total + tip;
+      S.totalEarned += order.total + tip;
       S.todaySold += qtyTotal;
       svc.served++;
       c.qty = qtyTotal;
@@ -985,7 +1122,7 @@ function endDay(){
       const p = rand(avail);
       S.inv.dough--; S.inv.sauce--;
       p.toppings.forEach(id=>S.tops[id]--);
-      S.cash += p.price; S.todayRevenue += p.price; S.todaySold++;
+      S.cash += p.price; S.todayRevenue += p.price; S.totalEarned += p.price; S.todaySold++;
       delivered++;
     }
     if(delivered>0) mopedNote = '<div class="pill gold" style="margin-top:8px">🛵 The moped delivered '+delivered+' pizza'+(delivered>1?'s':'')+' around town!</div>';
